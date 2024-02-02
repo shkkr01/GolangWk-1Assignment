@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/rand"
 	"flag"
 	"fmt"
 	"log"
@@ -24,12 +23,6 @@ func init() {
 	flag.BoolVar(&encryptMode, "encrypt", false, "Encrypt mode")
 	flag.IntVar(&chunkSize, "chunk-size", 1024, "Chunk size in bytes")
 	flag.Parse()
-}
-
-func generateNonce() ([]byte, error) {
-	nonce := make([]byte, aes.BlockSize)
-	_, err := rand.Read(nonce)
-	return nonce, err
 }
 
 func performEncrypt(plaintext []byte, key []byte) ([]byte, error) {
@@ -89,7 +82,7 @@ func processFile() error {
 		result = append(result, processedChunk...)
 	}
 
-	// Write result to the output file 0644 is the read write permission
+	// Write result to the output file 0644 is used for the read write permission
 	err = os.WriteFile(outputFile, result, 0644)
 	if err != nil {
 		return err
