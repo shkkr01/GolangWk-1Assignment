@@ -15,6 +15,9 @@ encrypt:
 
 decrypt:
 	go run main.go --file outputpath.txt --key "bHB&fuw2GD*I@Bsd" --out outputpathnew.txt
+just run these command in cli :
+1. make encrypt
+2. make decrypt
 
  ## Help
 Iam using The Symmetric Encryption is one of these method.We are going to encrypt and decrypt a file using symmetric encryption
