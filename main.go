@@ -5,8 +5,11 @@ import (
 	"crypto/cipher"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"sort"
+	"sync"
 	"time"
 )
 
@@ -15,6 +18,12 @@ var inputFile string
 var outputFile string
 var encryptMode bool
 var chunkSize int
+
+// ProcessedChunk holds the processed data along with its index
+type ProcessedChunk struct {
+	Index int
+	Data  []byte
+}
 
 func init() {
 	flag.StringVar(&key, "key", "", "Encryption key")
@@ -52,40 +61,77 @@ func performDecrypt(ciphertext []byte, key []byte) ([]byte, error) {
 }
 
 func processFile() error {
-	// Read input file
-	inputData, err := os.ReadFile(inputFile)
+	file, err := os.Open(inputFile)
 	if err != nil {
 		return err
 	}
+	defer file.Close()
 
-	var result []byte
+	output, err := os.Create(outputFile)
+	if err != nil {
+		return err
+	}
+	defer output.Close()
 
-	for i := 0; i < len(inputData); i += chunkSize {
-		end := i + chunkSize
-		if end > len(inputData) {
-			end = len(inputData)
-		}
-		chunk := inputData[i:end]
+	var mu sync.Mutex // Mutex to protect counter
+	var counter int
 
-		var processedChunk []byte
-		if encryptMode {
-			processedChunk, err = performEncrypt(chunk, []byte(key))
-		} else {
-			processedChunk, err = performDecrypt(chunk, []byte(key))
-		}
+	var wg sync.WaitGroup
+	var processedChunks []ProcessedChunk
 
-		if err != nil {
-			fmt.Println("Error processing chunk:", err)
+	for i := 0; ; i++ {
+		buffer := make([]byte, chunkSize)
+		n, err := file.Read(buffer)
+		if err != nil && err != io.EOF {
 			return err
 		}
 
-		result = append(result, processedChunk...)
+		if n == 0 {
+			break
+		}
+
+		chunk := buffer[:n]
+
+		wg.Add(1)
+		go func(index int, data []byte) {
+			defer wg.Done()
+
+			var processedChunk []byte
+			var err error
+			if encryptMode {
+				processedChunk, err = performEncrypt(data, []byte(key))
+			} else {
+				processedChunk, err = performDecrypt(data, []byte(key))
+			}
+
+			if err != nil {
+				fmt.Println("Error processing chunk:", err)
+				return
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			// Append the processed chunk with its index
+			processedChunks = append(processedChunks, ProcessedChunk{Index: index, Data: processedChunk})
+			counter++
+		}(i, chunk)
 	}
 
-	// Write result to the output file 0644 is used for the read write permission
-	err = os.WriteFile(outputFile, result, 0644)
-	if err != nil {
-		return err
+	wg.Wait() // Wait for all processing goroutines to finish
+
+	// Sort processed chunks based on their index
+	sort.Slice(processedChunks, func(i, j int) bool {
+		return processedChunks[i].Index < processedChunks[j].Index
+	})
+
+	// Write the sorted processed chunks to the output file
+	for _, pc := range processedChunks {
+		_, err := output.Write(pc.Data)
+		if err != nil {
+			fmt.Println("Error writing processed chunk to file:", err)
+			return err
+		}
 	}
 
 	return nil
